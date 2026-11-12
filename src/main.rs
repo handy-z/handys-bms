@@ -188,6 +188,7 @@ fn run() -> i32 {
     pill.create();
     let d = Dashboard::new(Spec {
         title: "handy's bms".into(),
+        badge: concat!("v", env!("CARGO_PKG_VERSION")).into(),
         window_class: DASHBOARD_CLASS.into(),
         rows: vec![
             section("On / off (keys work in Roblox)"),
