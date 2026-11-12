@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use handy_sdk::app::args::arg_value;
 use handy_sdk::app::crash_guard::on_crash;
-use handy_sdk::app::self_update::{UpdateStatus, badge_text, update_on_startup};
+use handy_sdk::app::self_update::{SelfUpdate, Startup, UpdateState};
 use handy_sdk::app::session_reader::SessionReader;
 use handy_sdk::app::single_instance::SingleInstance;
 use handy_sdk::app::status_snapshot::{snapshot_allowed, status_line, wait_for};
@@ -157,11 +157,11 @@ fn run() -> i32 {
 
     // Only builds made by release.cmd update themselves (dev builds and build.cmd never do). Skipped while another
     // copy runs: its exe is in use and it would be replaced under it.
-    let update = (option_env!("HANDY_RELEASE").is_some() && !SingleInstance::is_running(MUTEX))
-        .then(|| update_on_startup("handy-z", "handys-bms", env!("CARGO_PKG_VERSION")));
-    if update == Some(UpdateStatus::Restarting) {
-        return 0; // the new version is starting; exit before anything else runs
-    }
+    let enabled = option_env!("HANDY_RELEASE").is_some() && !SingleInstance::is_running(MUTEX);
+    let update = match SelfUpdate::start("handy-z", "handys-bms", env!("CARGO_PKG_VERSION"), enabled) {
+        Startup::Restarting => return 0, // an update staged earlier is starting; exit before anything else runs
+        Startup::Running(u) => u,
+    };
 
     let mut instance = SingleInstance::new(MUTEX, DASHBOARD_CLASS);
     if !instance.acquire() {
@@ -191,7 +191,7 @@ fn run() -> i32 {
     pill.create();
     let d = Dashboard::new(Spec {
         title: "handy's bms".into(),
-        badge: badge_text(env!("CARGO_PKG_VERSION"), update),
+        badge: update.badge().text,
         window_class: DASHBOARD_CLASS.into(),
         rows: vec![
             section("On / off (keys work in Roblox)"),
@@ -220,6 +220,8 @@ fn run() -> i32 {
         ..Default::default()
     });
     d.on_tick(|ui| {
+        let b = update.badge();
+        ui.set_badge(&b.text, b.tone, &b.tip);
         let session = updater.session();
         // only presses made in Roblox flip them
         let in_roblox = session.is_some_and(|s| foreground_is(s.proc.pid()));
@@ -300,6 +302,16 @@ fn run() -> i32 {
             ui.set_number(ID_FILL, s.fill_pct);
         }
     });
+    d.on_badge_click(|ui| {
+        if matches!(update.state(), UpdateState::Ready { .. }) && clicker.clicking() {
+            return ui.flash(); // not mid-click
+        }
+        if update.request_restart() {
+            ui.close();
+        } else {
+            handy_sdk::ui::open_url(&update.release_url());
+        }
+    });
     d.on_check(|_, id, checked| {
         settings.update(|s| match id {
             ID_OVERLAY_ON => s.overlay_on = checked,
@@ -334,6 +346,7 @@ fn run() -> i32 {
     drop(clicker_thread); // it and the engine read the Updater's session, so they go first
     drop(engine_thread);
     drop(updater_thread);
+    update.finish(); // after the mutex is released: starts the staged update
     rc
 }
 
