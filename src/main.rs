@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use handy_sdk::app::args::arg_value;
 use handy_sdk::app::crash_guard::on_crash;
-use handy_sdk::app::self_update::update_on_startup;
+use handy_sdk::app::self_update::{UpdateStatus, badge_text, update_on_startup};
 use handy_sdk::app::session_reader::SessionReader;
 use handy_sdk::app::single_instance::SingleInstance;
 use handy_sdk::app::status_snapshot::{snapshot_allowed, status_line, wait_for};
@@ -83,7 +83,11 @@ fn status_snapshot(out: &Path) -> i32 {
         Duration::from_secs(15),
         Duration::from_millis(50),
     );
-    let mut f = format!("status: {}\n", status_line(&updater)); // then a line per thing the game reads
+    let mut f = format!(
+        "version: {}\nstatus: {}\n",
+        env!("CARGO_PKG_VERSION"),
+        status_line(&updater)
+    ); // then a line per thing the game reads
 
     let mut reader = SessionReader::for_updater(&updater, BoardReader::new);
     let mut failed = "no session".to_owned();
@@ -153,10 +157,9 @@ fn run() -> i32 {
 
     // Only builds made by release.cmd update themselves (dev builds and build.cmd never do). Skipped while another
     // copy runs: its exe is in use and it would be replaced under it.
-    if option_env!("HANDY_RELEASE").is_some()
-        && !SingleInstance::is_running(MUTEX)
-        && update_on_startup("handy-z", "handys-bms", env!("CARGO_PKG_VERSION"))
-    {
+    let update = (option_env!("HANDY_RELEASE").is_some() && !SingleInstance::is_running(MUTEX))
+        .then(|| update_on_startup("handy-z", "handys-bms", env!("CARGO_PKG_VERSION")));
+    if update == Some(UpdateStatus::Restarting) {
         return 0; // the new version is starting; exit before anything else runs
     }
 
@@ -188,7 +191,7 @@ fn run() -> i32 {
     pill.create();
     let d = Dashboard::new(Spec {
         title: "handy's bms".into(),
-        badge: concat!("v", env!("CARGO_PKG_VERSION")).into(),
+        badge: badge_text(env!("CARGO_PKG_VERSION"), update),
         window_class: DASHBOARD_CLASS.into(),
         rows: vec![
             section("On / off (keys work in Roblox)"),
