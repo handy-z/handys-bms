@@ -18,7 +18,7 @@ use handy_sdk::input::key::MOUSE_LEFT;
 use handy_sdk::input::send::release;
 use handy_sdk::roblox::http::win_http_get;
 use handy_sdk::roblox::screen::read_screen_view;
-use handy_sdk::ui::dashboard::{Dashboard, Spec, check, note, number, section, value};
+use handy_sdk::ui::dashboard::{Dashboard, Spec, check, choice, note, number, page, section, value};
 use handy_sdk::ui::overlay::StatusOverlay;
 use handy_sdk::util::paths::{app_data_dir, set_app_name};
 use handy_sdk::util::thread::StopThread;
@@ -45,9 +45,7 @@ const ID_SAFE: i32 = 5;
 const ID_MINES: i32 = 6;
 const ID_GUESS: i32 = 7;
 const ID_OPENER: i32 = 8;
-const ID_SQUARE: i32 = 9;
-const ID_CIRCLE: i32 = 10;
-const ID_DIAMOND: i32 = 11;
+const ID_SHAPE: i32 = 9;
 const ID_SIZE: i32 = 12;
 const ID_FILL: i32 = 13;
 const ID_OUTLINE: i32 = 14;
@@ -194,23 +192,23 @@ fn run() -> i32 {
         badge: update.badge().text,
         window_class: DASHBOARD_CLASS.into(),
         rows: vec![
+            page("Main"),
             section("On / off (keys work in Roblox)"),
-            check(ID_OVERLAY_ON, "Overlay\tF1"),
-            check(ID_CLICK, "Hold mouse X2 to spam left click\tF2"),
+            check(ID_OVERLAY_ON, "Overlay\t[F1]"),
+            check(ID_CLICK, "Hold mouse X2 to spam left click\t[F2]"),
             section("bLockerman's Minesweeper"),
             value(ID_ROBLOX, "Roblox"),
             value(ID_BOARD, "Board"),
             value(ID_SOLVER, "Solver"),
             value(ID_OVERLAY, "Overlay"),
+            page("Overlay"),
             section("Show"),
             check(ID_SAFE, "Safe tiles"),
             check(ID_MINES, "Mines"),
             check(ID_GUESS, "Best guess and chances when nothing is safe"),
             check(ID_OPENER, "Area openers"),
             section("Look"),
-            check(ID_SQUARE, "Square"),
-            check(ID_CIRCLE, "Circle"),
-            check(ID_DIAMOND, "Diamond"),
+            choice(ID_SHAPE, "Shape", &["Square", "Circle", "Diamond"]),
             number(ID_SIZE, "Size (% of tile)", MIN_SIZE_PCT, MAX_SIZE_PCT),
             number(ID_FILL, "Fill opacity (%)", 0, 100),
             check(ID_OUTLINE, "Outline"),
@@ -245,7 +243,8 @@ fn run() -> i32 {
             settings.save(&config_ini());
         }
         let st = updater.status();
-        ui.set_status(status_tone(st), status_name(st), &updater.detail());
+        ui.set_status(status_tone(st), status_name(st), "");
+        ui.set_status_tip(&updater.detail());
         ui.set_text(
             ID_ROBLOX,
             if st == AppStatus::Ready {
@@ -292,9 +291,7 @@ fn run() -> i32 {
         ui.set_check(ID_MINES, s.show_mines);
         ui.set_check(ID_GUESS, s.show_hint);
         ui.set_check(ID_OPENER, s.show_opener);
-        ui.set_check(ID_SQUARE, s.shape == MarkShape::Square);
-        ui.set_check(ID_CIRCLE, s.shape == MarkShape::Circle);
-        ui.set_check(ID_DIAMOND, s.shape == MarkShape::Diamond);
+        ui.set_choice(ID_SHAPE, s.shape as usize);
         ui.set_check(ID_OUTLINE, s.outline);
         if first.replace(false) {
             // only once: setting them every tick would fight typing
@@ -320,11 +317,14 @@ fn run() -> i32 {
             ID_MINES => s.show_mines = checked,
             ID_GUESS => s.show_hint = checked,
             ID_OPENER => s.show_opener = checked,
-            ID_SQUARE => s.shape = MarkShape::Square, // the shapes act as one choice: a click picks it
-            ID_CIRCLE => s.shape = MarkShape::Circle,
-            ID_DIAMOND => s.shape = MarkShape::Diamond,
             ID_OUTLINE => s.outline = checked,
             _ => {}
+        });
+        settings.save(&config_ini());
+    });
+    d.on_choice(|_, _, index| {
+        settings.update(|s| {
+            s.shape = [MarkShape::Square, MarkShape::Circle, MarkShape::Diamond][index.min(2)];
         });
         settings.save(&config_ini());
     });
